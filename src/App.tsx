@@ -64,6 +64,7 @@ import {
   setDoc,
   query,
   orderBy,
+  updateDoc,
   getDocFromServer
 } from 'firebase/firestore';
 import { handleFirestoreError, OperationType } from './lib/utils';
@@ -81,6 +82,7 @@ export default function App() {
   const [isEditingIncome, setIsEditingIncome] = useState(false);
   const [tempIncome, setTempIncome] = useState('');
   const [isAdding, setIsAdding] = useState(false);
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
   const [flyerMode, setFlyerMode] = useState(false);
   const [selectedExpensesForFlyer, setSelectedExpensesForFlyer] = useState<Expense[]>([]);
@@ -162,7 +164,7 @@ export default function App() {
 
   const [flyerConfig, setFlyerConfig] = useState<FlyerConfig>({
     title: 'Evento Especial',
-    subtitle: 'Resumo de Gastos',
+    subtitle: 'Resumo de Despesas',
     primaryColor: '#141414',
     secondaryColor: '#FF6321',
     backgroundColor: '#FFFFFF',
@@ -233,8 +235,8 @@ export default function App() {
       const ai = new GoogleGenAI({ apiKey });
       const expensesList = selectedExpensesForFlyer.map(e => `- ${e.name} (${e.category}): R$ ${e.amount.toFixed(2)}`).join('\n');
       
-      const prompt = `Crie um título e um subtítulo criativos e memoráveis para um flyer de controle de gastos/finanças. 
-      Os gastos selecionados são:\n${expensesList}\n
+      const prompt = `Crie um título e um subtítulo criativos e memoráveis para um flyer de controle de despesas/finanças. 
+      As despesas selecionadas são:\n${expensesList}\n
       O título deve ser impactante e o subtítulo deve ser curto e explicativo.
       Responda APENAS em formato JSON com as chaves "title" e "subtitle".`;
 
@@ -339,6 +341,17 @@ export default function App() {
     }
   }, [user, selectedIds]);
 
+  const updateExpense = useCallback(async (id: string, updates: Partial<Expense>) => {
+    if (!user) return;
+    const path = `users/${user.uid}/expenses/${id}`;
+    try {
+      await updateDoc(doc(db, 'users', user.uid, 'expenses', id), updates);
+      setEditingExpense(null);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, path);
+    }
+  }, [user]);
+
   const visibleExpenses = useMemo(() => {
     return expenses.filter(e => {
       const d = new Date(e.date);
@@ -425,7 +438,7 @@ export default function App() {
               className="bg-black text-white px-6 py-2.5 rounded-2xl text-sm font-bold flex items-center gap-2 shadow-xl shadow-black/20"
             >
               <Plus size={18} />
-              <span className="hidden sm:inline">Novo Gasto</span>
+              <span className="hidden sm:inline">Nova Despesa</span>
             </motion.button>
           </div>
         </div>
@@ -494,7 +507,7 @@ export default function App() {
 
             <section className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
               <div className="flex items-center justify-between mb-4">
-                <span className="text-xs font-semibold text-gray-400 uppercase tracking-widest">Total Gasto</span>
+                <span className="text-xs font-semibold text-gray-400 uppercase tracking-widest">Total Despendido</span>
                 <TrendingUp size={16} className="text-red-500" />
               </div>
               <div className="flex items-baseline gap-1">
@@ -557,7 +570,7 @@ export default function App() {
           <div className="lg:col-span-2 space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <h2 className="font-bold text-xl">Gastos Recentes</h2>
+                <h2 className="font-bold text-xl">Despesas Recentes</h2>
                 <div className="flex flex-wrap items-center gap-1 mt-1">
                   <button 
                     onClick={() => setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() - 1, 1))}
@@ -661,6 +674,13 @@ export default function App() {
                         <span className="font-mono font-medium text-lg">R$ {expense.amount.toFixed(2)}</span>
                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button 
+                            onClick={() => setEditingExpense(expense)}
+                            className="p-2 hover:bg-gray-100 rounded-full text-gray-400 hover:text-blue-500 transition-colors"
+                            title="Editar"
+                          >
+                            <Edit2 size={16} />
+                          </button>
+                          <button 
                             onClick={() => openFlyerForSingle(expense)}
                             className="p-2 hover:bg-gray-100 rounded-full text-gray-400 hover:text-accent transition-colors"
                             title="Gerar Flyer"
@@ -683,9 +703,9 @@ export default function App() {
                       <PieChart size={24} className="text-gray-300" />
                     </div>
                     <div>
-                      <h3 className="font-semibold text-gray-900">Nenhum gasto registrado</h3>
+                      <h3 className="font-semibold text-gray-900">Nenhuma despesa registrada</h3>
                       <p className="text-sm text-gray-500 max-w-[240px] mx-auto mt-1">
-                        Comece adicionando seu primeiro gasto para visualizar suas finanças.
+                        Comece adicionando sua primeira despesa para visualizar suas finanças.
                       </p>
                     </div>
                   </div>
@@ -695,6 +715,39 @@ export default function App() {
           </div>
         </div>
       </main>
+
+      {/* Fly-out Edit Form */}
+      <AnimatePresence>
+        {editingExpense && (
+          <>
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setEditingExpense(null)}
+              className="fixed inset-0 bg-black/20 backdrop-blur-sm z-50 px-6 sm:px-0 flex items-center justify-center"
+            />
+            <motion.div 
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="fixed inset-y-0 right-0 w-full max-w-md bg-white z-50 shadow-2xl flex flex-col"
+            >
+              <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+                <h3 className="font-bold text-lg">Editar Despesa</h3>
+                <button onClick={() => setEditingExpense(null)} className="p-2 hover:bg-gray-100 rounded-full">
+                  <X size={20} />
+                </button>
+              </div>
+              <ExpenseForm 
+                initialData={editingExpense} 
+                onSubmit={(data) => updateExpense(editingExpense.id, data)} 
+              />
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       {/* Fly-out Add Form */}
       <AnimatePresence>
@@ -714,7 +767,7 @@ export default function App() {
               className="fixed inset-y-0 right-0 w-full max-w-md bg-white z-50 shadow-2xl flex flex-col"
             >
               <div className="p-6 border-b border-gray-100 flex items-center justify-between">
-                <h3 className="font-bold text-lg">Novo Gasto</h3>
+                <h3 className="font-bold text-lg">Nova Despesa</h3>
                 <button onClick={() => setIsAdding(false)} className="p-2 hover:bg-gray-100 rounded-full">
                   <X size={20} />
                 </button>
@@ -1065,18 +1118,21 @@ function LoginPage() {
         </div>
 
         <p className="text-xs text-gray-400 pt-8 uppercase tracking-widest font-bold">
-          Design estratégico • 2024
+          Design estratégico • 2026
         </p>
       </motion.div>
     </div>
   );
 }
 
-function ExpenseForm({ onSubmit }: { onSubmit: (e: Omit<Expense, 'id'>, installments: number) => void }) {
-  const [name, setName] = useState('');
-  const [amount, setAmount] = useState('');
-  const [category, setCategory] = useState<Category>('Fixos');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+function ExpenseForm({ onSubmit, initialData }: { 
+  onSubmit: (e: Omit<Expense, 'id'>, installments: number) => void,
+  initialData?: Expense 
+}) {
+  const [name, setName] = useState(initialData?.name || '');
+  const [amount, setAmount] = useState(initialData?.amount.toString() || '');
+  const [category, setCategory] = useState<Category>(initialData?.category || 'Fixos');
+  const [date, setDate] = useState(initialData ? new Date(initialData.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
   const [installments, setInstallments] = useState('1');
 
   return (
@@ -1115,7 +1171,7 @@ function ExpenseForm({ onSubmit }: { onSubmit: (e: Omit<Expense, 'id'>, installm
           </div>
         </div>
 
-        {category !== 'Fixos' && (
+        {!initialData && category !== 'Fixos' && (
           <div className="space-y-1 animate-in slide-in-from-top-2 duration-300">
             <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Parcelas (Vezes)</label>
             <div className="flex items-center gap-4 py-2 border-b-2 border-gray-100 focus-within:border-black transition-all">
@@ -1129,7 +1185,7 @@ function ExpenseForm({ onSubmit }: { onSubmit: (e: Omit<Expense, 'id'>, installm
                 className="w-full outline-none text-lg font-mono"
               />
             </div>
-            <p className="text-[10px] text-gray-400 italic">O gasto será replicado nos meses seguintes.</p>
+            <p className="text-[10px] text-gray-400 italic">A despesa será replicada nos meses seguintes.</p>
           </div>
         )}
 
@@ -1157,7 +1213,7 @@ function ExpenseForm({ onSubmit }: { onSubmit: (e: Omit<Expense, 'id'>, installm
         className="w-full bg-black text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-gray-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
       >
         <PlusCircle size={20} />
-        Salvar Gasto
+        {initialData ? 'Atualizar Despesa' : 'Salvar Despesa'}
       </button>
     </div>
   );
