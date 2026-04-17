@@ -23,11 +23,13 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isOwner(userId);
-      allow write: if isOwner(userId) && isValidUser(request.resource.data);
+      allow create, update: if isOwner(userId) && isValidUser(request.resource.data);
+      allow delete: if isOwner(userId);
       
       match /expenses/{expenseId} {
         allow read: if isOwner(userId);
-        allow write: if isOwner(userId) && isValidExpense(request.resource.data);
+        allow create, update: if isOwner(userId) && isValidExpense(request.resource.data);
+        allow delete: if isOwner(userId);
       }
     }
   }

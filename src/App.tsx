@@ -325,6 +325,20 @@ export default function App() {
     }
   }, [user]);
 
+  const deleteSelectedExpenses = useCallback(async () => {
+    if (!user || selectedIds.length === 0) return;
+    
+    try {
+      // We delete them sequentially for simplicity in this case
+      for (const id of selectedIds) {
+        await deleteDoc(doc(db, 'users', user.uid, 'expenses', id));
+      }
+      setSelectedIds([]);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, `users/${user.uid}/expenses/multiple`);
+    }
+  }, [user, selectedIds]);
+
   const visibleExpenses = useMemo(() => {
     return expenses.filter(e => {
       const d = new Date(e.date);
@@ -977,6 +991,14 @@ export default function App() {
               >
                 <Layout size={16} />
                 Gerar Flyer em Colunas
+              </button>
+              <div className="w-[1px] h-4 bg-white/20 ml-2"></div>
+              <button 
+                onClick={deleteSelectedExpenses}
+                className="flex items-center gap-2 text-sm font-semibold text-red-400 hover:text-red-500 transition-colors ml-2"
+              >
+                <Trash2 size={16} />
+                Excluir Selecionados
               </button>
               <button 
                 onClick={() => setSelectedIds([])}
