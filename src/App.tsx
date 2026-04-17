@@ -224,7 +224,13 @@ export default function App() {
   const generateAICopy = async () => {
     setIsGeneratingAI(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        console.error("GEMINI_API_KEY não configurada no ambiente.");
+        setIsGeneratingAI(false);
+        return;
+      }
+      const ai = new GoogleGenAI({ apiKey });
       const expensesList = selectedExpensesForFlyer.map(e => `- ${e.name} (${e.category}): R$ ${e.amount.toFixed(2)}`).join('\n');
       
       const prompt = `Crie um título e um subtítulo criativos e memoráveis para um flyer de controle de gastos/finanças. 
@@ -379,7 +385,7 @@ export default function App() {
               <Wallet size={24} />
             </div>
             <div>
-              <h1 className="font-black text-2xl tracking-tighter leading-none">FINANLY</h1>
+              <h1 className="font-black text-2xl tracking-tighter leading-none">FINANLLY</h1>
               <p className="text-[10px] text-gray-400 font-bold uppercase tracking-[0.3em]">Financial Intelligence</p>
             </div>
           </div>
@@ -1000,7 +1006,7 @@ function LoginPage() {
             <Wallet size={40} />
           </div>
           <div>
-            <h1 className="text-4xl font-black tracking-tighter">FINANLY</h1>
+            <h1 className="text-4xl font-black tracking-tighter">FINANLLY</h1>
             <p className="text-gray-500 font-medium">Sua inteligência financeira começa aqui.</p>
           </div>
         </div>
@@ -1290,7 +1296,7 @@ function Flyer({ config, expenses, income }: { config: FlyerConfig, expenses: Ex
               <TrendingUp size={24} /> Balanço de Performance
             </h4>
             <div className="bg-white/50 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest opacity-40">
-              Gerado via Finanly AI
+              Gerado via Finanlly AI
             </div>
           </div>
           
@@ -1326,7 +1332,7 @@ function Flyer({ config, expenses, income }: { config: FlyerConfig, expenses: Ex
         
         {/* Fine Print */}
         <div className="mt-auto pt-10 text-center border-t border-black/5">
-          <p className="text-[10px] uppercase tracking-[0.5em] font-black opacity-30">Relatório Financeiro Estratégico • Finanly Intelligence</p>
+          <p className="text-[10px] uppercase tracking-[0.5em] font-black opacity-30">Relatório Financeiro Estratégico • Finanlly Intelligence</p>
         </div>
       </div>
     </div>
