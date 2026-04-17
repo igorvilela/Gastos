@@ -1,0 +1,47 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and financial settings",
+      "type": "object",
+      "properties": {
+        "income": {
+          "type": "number",
+          "description": "The user's monthly income"
+        }
+      },
+      "required": ["income"]
+    },
+    "Expense": {
+      "title": "Expense",
+      "description": "A single financial expense",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "amount": { "type": "number" },
+        "category": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "description": { "type": "string" },
+        "installment": {
+          "type": "object",
+          "properties": {
+            "current": { "type": "number" },
+            "total": { "type": "number" },
+            "groupId": { "type": "string" }
+          }
+        }
+      },
+      "required": ["name", "amount", "category", "date"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile document"
+    },
+    "/users/{userId}/expenses/{expenseId}": {
+      "schema": "Expense",
+      "description": "Sub-collection for user expenses"
+    }
+  }
+}
