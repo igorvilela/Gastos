@@ -39,7 +39,8 @@ import {
   LogIn,
   User as UserIcon,
   ShieldCheck,
-  ZapIcon
+  ZapIcon,
+  FileText
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -78,6 +79,7 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<Category | 'Todos'>('Todos');
   const [income, setIncome] = useState<number>(0);
   const [isEditingIncome, setIsEditingIncome] = useState(false);
   const [tempIncome, setTempIncome] = useState('');
@@ -85,6 +87,7 @@ export default function App() {
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
   const [flyerMode, setFlyerMode] = useState(false);
+  const [reportMode, setReportMode] = useState(false);
   const [selectedExpensesForFlyer, setSelectedExpensesForFlyer] = useState<Expense[]>([]);
   const [viewDate, setViewDate] = useState(new Date());
   const flyerRef = useRef<HTMLDivElement>(null);
@@ -223,6 +226,60 @@ export default function App() {
     setFlyerMode(true);
   };
 
+  const exportToCSV = (data: Expense[], filename: string) => {
+    const headers = ['Nome', 'Valor', 'Categoria', 'Data', 'Parcela'];
+    const rows = data.map(e => [
+      e.name,
+      e.amount.toFixed(2),
+      e.category,
+      new Date(e.date).toLocaleDateString('pt-BR'),
+      e.installment ? `${e.installment.current}/${e.installment.total}` : 'N/A'
+    ]);
+
+    const csvContent = "\uFEFF" + [
+      headers.join(';'),
+      ...rows.map(r => r.map(v => `"${v}"`).join(';'))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${filename}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const exportExpensesCSV = (month: number, year: number) => {
+    const data = expenses.filter(e => {
+      const d = new Date(e.date);
+      if (e.category === 'Fixos') {
+        const expenseStart = new Date(d.getFullYear(), d.getMonth(), 1);
+        const currentView = new Date(year, month, 1);
+        return expenseStart <= currentView;
+      }
+      return d.getMonth() === month && d.getFullYear() === year;
+    });
+    
+    const monthName = new Date(2000, month, 1).toLocaleString('pt-BR', { month: 'long' });
+    exportToCSV(data, `despesas-${monthName}-${year}`);
+  };
+
+  const exportYearlyCSV = (year: number) => {
+    // For yearly, we should probably expand fixed expenses for each month or just list unique ones.
+    // Let's just list all expenses that occurred in that year.
+    const yearData = expenses.filter(e => {
+      const d = new Date(e.date);
+      if (e.category === 'Fixos') {
+        return d.getFullYear() <= year;
+      }
+      return d.getFullYear() === year;
+    });
+    exportToCSV(yearData, `relatorio-anual-${year}`);
+  };
+
   const generateAICopy = async () => {
     setIsGeneratingAI(true);
     try {
@@ -355,6 +412,12 @@ export default function App() {
   const visibleExpenses = useMemo(() => {
     return expenses.filter(e => {
       const d = new Date(e.date);
+      
+      // Filter by category if selected
+      if (selectedCategory !== 'Todos' && e.category !== selectedCategory) {
+        return false;
+      }
+
       // Fixed expenses show if they started in or before the current month
       if (e.category === 'Fixos') {
         const expenseStart = new Date(d.getFullYear(), d.getMonth(), 1);
@@ -363,7 +426,23 @@ export default function App() {
       }
       return d.getMonth() === viewDate.getMonth() && d.getFullYear() === viewDate.getFullYear();
     });
-  }, [expenses, viewDate]);
+  }, [expenses, viewDate, selectedCategory]);
+
+  const groupedVisibleExpenses = useMemo(() => {
+    const groups: Record<Category, Expense[]> = {
+      'Fixos': [],
+      'Variáveis': [],
+      'Prazeres': [],
+      'Reserva': [],
+      'Cartão de Crédito': []
+    };
+    
+    visibleExpenses.forEach(e => {
+      groups[e.category].push(e);
+    });
+    
+    return groups;
+  }, [visibleExpenses]);
 
   const total = useMemo(() => visibleExpenses.reduce((sum, e) => sum + e.amount, 0), [visibleExpenses]);
   const balance = useMemo(() => income - total, [income, total]);
@@ -418,6 +497,16 @@ export default function App() {
           </div>
           
           <div className="flex items-center gap-4">
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => setReportMode(true)}
+              className="hidden sm:flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-600 rounded-2xl text-sm font-bold hover:bg-gray-200 transition-colors"
+              title="Exportar Relatórios"
+            >
+              <FileText size={18} />
+              Relatórios
+            </motion.button>
             <div className="hidden sm:flex flex-col items-end mr-2">
               <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Usuário</span>
               <span className="text-xs font-bold text-gray-900">{user.displayName || user.email}</span>
@@ -570,7 +659,7 @@ export default function App() {
           <div className="lg:col-span-2 space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <h2 className="font-bold text-xl">Despesas Recentes</h2>
+                <h2 className="font-bold text-xl">Despesas do Mês</h2>
                 <div className="flex flex-wrap items-center gap-1 mt-1">
                   <button 
                     onClick={() => setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() - 1, 1))}
@@ -637,66 +726,110 @@ export default function App() {
               </div>
             </div>
 
-            <div className="space-y-3">
+            {/* Category Filters */}
+            <div className="flex flex-wrap gap-2 overflow-x-auto pb-2 scrollbar-hide">
+              <button
+                onClick={() => setSelectedCategory('Todos')}
+                className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all whitespace-nowrap ${selectedCategory === 'Todos' ? 'bg-black text-white shadow-lg' : 'bg-white text-gray-400 border border-gray-100 hover:border-gray-200'}`}
+              >
+                Todos
+              </button>
+              {CATEGORIES.map(cat => (
+                <button
+                  key={cat}
+                  onClick={() => setSelectedCategory(cat)}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all whitespace-nowrap ${selectedCategory === cat ? 'bg-black text-white shadow-lg' : 'bg-white text-gray-400 border border-gray-100 hover:border-gray-200'}`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+
+            <div className="space-y-8">
               <AnimatePresence mode="popLayout">
                 {visibleExpenses.length > 0 ? (
-                  visibleExpenses.map((expense) => (
-                    <motion.div
-                      layout
-                      key={expense.id}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, scale: 0.95 }}
-                      className={`group bg-white p-4 rounded-2xl border transition-all flex items-center justify-between shadow-sm relative ${selectedIds.includes(expense.id) ? 'border-accent ring-1 ring-accent/20' : 'border-gray-100 hover:border-accent/30'}`}
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="flex items-center gap-3">
-                          <input 
-                            type="checkbox" 
-                            checked={selectedIds.includes(expense.id)}
-                            onChange={() => toggleSelection(expense.id)}
-                            className="w-4 h-4 rounded border-gray-300 text-accent focus:ring-accent accent-accent"
-                          />
-                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center bg-gray-50 text-gray-400 group-hover:bg-accent group-hover:text-white transition-colors ${selectedIds.includes(expense.id) ? 'bg-accent text-white' : ''}`}>
-                            <DollarSign size={18} />
-                          </div>
+                  CATEGORIES.filter(cat => selectedCategory === 'Todos' || selectedCategory === cat).map(cat => {
+                    const groupExpenses = groupedVisibleExpenses[cat];
+                    if (groupExpenses.length === 0) return null;
+                    
+                    return (
+                      <div key={cat} className="space-y-3">
+                        <div className="flex items-center gap-3 px-2">
+                          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">{cat}</span>
+                          <div className="h-[1px] bg-gray-100 flex-1"></div>
+                          <span className="text-[10px] font-bold text-gray-400">
+                            R$ {groupExpenses.reduce((sum, e) => sum + e.amount, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                          </span>
                         </div>
-                        <div>
-                          <h4 className="font-semibold text-gray-900 leading-none mb-1">{expense.name}</h4>
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">{expense.category}</span>
-                            <span className="w-1 h-1 bg-gray-200 rounded-full"></span>
-                            <span className="text-[10px] text-gray-400">{new Date(expense.date).toLocaleDateString('pt-BR')}</span>
-                          </div>
-                        </div>
+                        
+                        {groupExpenses.map((expense) => (
+                          <motion.div
+                            layout
+                            key={expense.id}
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95 }}
+                            className={`group bg-white p-4 rounded-2xl border transition-all flex items-center justify-between shadow-sm relative ${selectedIds.includes(expense.id) ? 'border-accent ring-1 ring-accent/20' : 'border-gray-100 hover:border-accent/30'}`}
+                          >
+                            <div className="flex items-center gap-4">
+                              <div className="flex items-center gap-3">
+                                <input 
+                                  type="checkbox" 
+                                  checked={selectedIds.includes(expense.id)}
+                                  onChange={() => toggleSelection(expense.id)}
+                                  className="w-4 h-4 rounded border-gray-300 text-accent focus:ring-accent accent-accent"
+                                />
+                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center bg-gray-50 text-gray-400 group-hover:bg-accent group-hover:text-white transition-colors ${selectedIds.includes(expense.id) ? 'bg-accent text-white' : ''}`}>
+                                  {cat === 'Cartão de Crédito' ? <CreditCard size={18} /> : 
+                                   cat === 'Fixos' ? <Home size={18} /> :
+                                   cat === 'Variáveis' ? <ShoppingBasket size={18} /> :
+                                   cat === 'Reserva' ? <PiggyBank size={18} /> :
+                                   <DollarSign size={18} />}
+                                </div>
+                              </div>
+                              <div>
+                                <h4 className="font-semibold text-gray-900 leading-none mb-1">{expense.name}</h4>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[10px] text-gray-400">{new Date(expense.date).toLocaleDateString('pt-BR')}</span>
+                                  {expense.installment && (
+                                    <>
+                                      <span className="w-1 h-1 bg-gray-200 rounded-full"></span>
+                                      <span className="text-[10px] font-bold text-blue-500 uppercase">Parcela {expense.installment.current}/{expense.installment.total}</span>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-4">
+                              <span className="font-mono font-medium text-lg">R$ {expense.amount.toFixed(2)}</span>
+                              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button 
+                                  onClick={() => setEditingExpense(expense)}
+                                  className="p-2 hover:bg-gray-100 rounded-full text-gray-400 hover:text-blue-500 transition-colors"
+                                  title="Editar"
+                                >
+                                  <Edit2 size={16} />
+                                </button>
+                                <button 
+                                  onClick={() => openFlyerForSingle(expense)}
+                                  className="p-2 hover:bg-gray-100 rounded-full text-gray-400 hover:text-accent transition-colors"
+                                  title="Gerar Flyer"
+                                >
+                                  <Layout size={16} />
+                                </button>
+                                <button 
+                                  onClick={() => deleteExpense(expense.id)}
+                                  className="p-2 hover:bg-red-50 rounded-full text-gray-400 hover:text-red-500 transition-colors"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              </div>
+                            </div>
+                          </motion.div>
+                        ))}
                       </div>
-                      <div className="flex items-center gap-4">
-                        <span className="font-mono font-medium text-lg">R$ {expense.amount.toFixed(2)}</span>
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button 
-                            onClick={() => setEditingExpense(expense)}
-                            className="p-2 hover:bg-gray-100 rounded-full text-gray-400 hover:text-blue-500 transition-colors"
-                            title="Editar"
-                          >
-                            <Edit2 size={16} />
-                          </button>
-                          <button 
-                            onClick={() => openFlyerForSingle(expense)}
-                            className="p-2 hover:bg-gray-100 rounded-full text-gray-400 hover:text-accent transition-colors"
-                            title="Gerar Flyer"
-                          >
-                            <Layout size={16} />
-                          </button>
-                          <button 
-                            onClick={() => deleteExpense(expense.id)}
-                            className="p-2 hover:bg-red-50 rounded-full text-gray-400 hover:text-red-500 transition-colors"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      </div>
-                    </motion.div>
-                  ))
+                    );
+                  })
                 ) : (
                   <div className="py-20 text-center space-y-4 bg-gray-50/50 rounded-3xl border-2 border-dashed border-gray-200">
                     <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center mx-auto shadow-sm">
@@ -775,6 +908,17 @@ export default function App() {
               <ExpenseForm onSubmit={addExpense} />
             </motion.div>
           </>
+        )}
+      </AnimatePresence>
+
+      {/* Report Modal */}
+      <AnimatePresence>
+        {reportMode && (
+          <ReportModal 
+            onClose={() => setReportMode(false)} 
+            onExportMonth={exportExpensesCSV}
+            onExportYear={exportYearlyCSV}
+          />
         )}
       </AnimatePresence>
 
@@ -1120,6 +1264,109 @@ function LoginPage() {
         <p className="text-xs text-gray-400 pt-8 uppercase tracking-widest font-bold">
           Design estratégico • 2026
         </p>
+      </motion.div>
+    </div>
+  );
+}
+
+function ReportModal({ 
+  onClose, 
+  onExportMonth, 
+  onExportYear 
+}: { 
+  onClose: () => void, 
+  onExportMonth: (m: number, y: number) => void,
+  onExportYear: (y: number) => void
+}) {
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const years = Array.from({ length: 11 }).map((_, i) => new Date().getFullYear() - 5 + i);
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-6 bg-black/40 backdrop-blur-sm">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.9, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.9, y: 20 }}
+        className="bg-white rounded-[40px] shadow-2xl w-full max-w-md overflow-hidden"
+      >
+        <div className="p-8 space-y-8">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-accent/10 text-accent rounded-2xl flex items-center justify-center">
+                <FileText size={24} />
+              </div>
+              <div>
+                <h3 className="text-xl font-black tracking-tight">Relatórios</h3>
+                <p className="text-xs text-gray-400 font-bold uppercase tracking-wider">Exportar Dados</p>
+              </div>
+            </div>
+            <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+              <X size={24} />
+            </button>
+          </div>
+
+          <div className="space-y-6">
+            <section className="space-y-4">
+              <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-300">Relatório Mensal (CSV)</h4>
+              <div className="grid grid-cols-2 gap-3">
+                <select 
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
+                  className="bg-gray-50 p-4 rounded-2xl font-bold text-sm outline-none border border-transparent focus:border-accent/20 transition-all appearance-none"
+                >
+                  {Array.from({ length: 12 }).map((_, i) => (
+                    <option key={i} value={i}>
+                      {new Date(2000, i, 1).toLocaleString('pt-BR', { month: 'long' })}
+                    </option>
+                  ))}
+                </select>
+                <select 
+                  value={selectedYear}
+                  onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+                  className="bg-gray-50 p-4 rounded-2xl font-bold text-sm outline-none border border-transparent focus:border-accent/20 transition-all appearance-none"
+                >
+                  {years.map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </div>
+              <button 
+                onClick={() => {
+                  onExportMonth(selectedMonth, selectedYear);
+                  onClose();
+                }}
+                className="w-full bg-black text-white py-4 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-gray-800 transition-all"
+              >
+                <Download size={18} />
+                Baixar Mês Selecionado
+              </button>
+            </section>
+
+            <div className="h-[1px] bg-gray-100"></div>
+
+            <section className="space-y-4">
+              <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-300">Relatório Anual Completo</h4>
+              <div className="space-y-3">
+                <select 
+                  value={selectedYear}
+                  onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+                  className="w-full bg-gray-50 p-4 rounded-2xl font-bold text-sm outline-none border border-transparent focus:border-accent/20 transition-all appearance-none"
+                >
+                  {years.map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+                <button 
+                  onClick={() => {
+                    onExportYear(selectedYear);
+                    onClose();
+                  }}
+                  className="w-full border-2 border-black text-black py-4 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-gray-50 transition-all"
+                >
+                  <Download size={18} />
+                  Baixar Ano {selectedYear} (CSV)
+                </button>
+              </div>
+            </section>
+          </div>
+        </div>
       </motion.div>
     </div>
   );
